@@ -1,0 +1,107 @@
+-- 1. pregnancy_profile
+--    Core patient record — one row per pregnancy.
+--    Attributes: preg_id, Name, start_date, LMP, EDD,
+--                Age, Preg_Status, created_at
+--    curr_preg_week is DERIVED (dashed oval in ERD) → NOT stored.
+--    Relationships:
+--      Doctor (1) → have → Pregnancy Profile (M)
+-- ----------------------------------------------------------------
+CREATE TABLE pregnancy_profile (
+    preg_id         INT              NOT NULL IDENTITY(1,1),
+    doctor_id       INT              NOT NULL,  -- FK → doctor (have relationship)
+    patient_name    NVARCHAR(255)    NOT NULL,
+    start_dt        DATE,
+    lmp             DATE,                       -- Last Menstrual Period
+    edd             DATE,                       -- Estimated Due Date
+    age             TINYINT,                    
+    preg_status     NVARCHAR(50)     NOT NULL
+    CONSTRAINT df_profile_status     DEFAULT 'Active',
+                                               -- 'Active' | 'Completed' | 'Miscarried' | 'Terminated'
+    created_at      DATETIME2        NOT NULL
+    CONSTRAINT df_profile_created_at DEFAULT GETDATE(),
+ 
+    -- curr_preg_week: derived, exposed via v_pregnancy_profile view below
+ 
+    CONSTRAINT pk_pregnancy_profile PRIMARY KEY (preg_id),
+    CONSTRAINT fk_profile_doctor FOREIGN KEY (doctor_id)
+        REFERENCES doctor (doctor_id)
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE
+);
+GO
+-- View to expose the derived attribute curr_preg_week
+CREATE OR ALTER VIEW v_pregnancy_profile AS
+SELECT
+    pp.*,
+    FLOOR(DATEDIFF(DAY, pp.lmp, CAST(GETDATE() AS DATE)) / 7) AS curr_preg_week
+FROM pregnancy_profile pp;
+GO 
+
+-- ----------------------------------------------------------------
+-- 2. notifications
+--    An in-app notification delivered to a pregnancy profile.
+--    Attributes: ID, Text (relationship attr), status, Type, created_at
+--    Relationship: Pregnancy Profile (1) → give → Notifications (M)
+-- ----------------------------------------------------------------
+CREATE TABLE notifications (
+    notif_id        INT              NOT NULL IDENTITY(1,1),
+    preg_id         INT              NOT NULL,  -- FK → pregnancy_profile (give relationship)
+    notif_text           NVARCHAR(255),              -- relationship attribute from "give"
+    notif_status    NVARCHAR(50)     NOT NULL
+    CONSTRAINT df_notif_status     DEFAULT 'Sent', -- 'Sent' | 'Read' | 'Dismissed'
+    notif_type      NVARCHAR(100),              -- 'Reminder' | 'Alert' | 'Tip'
+    created_at      DATETIME2        NOT NULL 
+    CONSTRAINT df_notif_created_at DEFAULT GETDATE(),
+ 
+    CONSTRAINT pk_notifications PRIMARY KEY (notif_id),
+    CONSTRAINT fk_notif_profile FOREIGN KEY (preg_id)
+        REFERENCES pregnancy_profile (preg_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+GO
+
+-- ----------------------------------------------------------------
+-- 3. content
+--    Educational or informational content targeted to a preg week.
+--    Attributes: content_id, text, preg_week, source, version, status
+-- ----------------------------------------------------------------
+CREATE TABLE [content] (
+    content_id      INT              NOT NULL IDENTITY(1,1),
+    content_text    NVARCHAR(MAX),              -- renamed from TEXT to avoid type-name collision
+    preg_week       TINYINT,                    -- target week (1–42); NULL = general
+    content_source  NVARCHAR(50),
+    source_version  NVARCHAR(20),
+    content_status  NVARCHAR(50)     NOT NULL 
+    CONSTRAINT df_content_status DEFAULT 'Published',
+                                               -- 'Published' | 'Draft' | 'Archived'
+ 
+    CONSTRAINT pk_content PRIMARY KEY (content_id)
+);
+GO
+ 
+ 
+-- ----------------------------------------------------------------
+-- 4. profile_content  (junction for M:M "have" relationship)
+--     Pregnancy Profile (M) ↔ have ↔ Content (M)
+--     Note: only one cascade path per table is allowed in SQL Server.
+--     Using NO ACTION here; deletions must be handled in application
+--     logic or via a stored procedure / trigger.
+-- ----------------------------------------------------------------
+CREATE TABLE profile_content (
+    preg_id         INT              NOT NULL,
+    content_id      INT              NOT NULL,
+    assigned_at     DATETIME2        NOT NULL 
+    CONSTRAINT df_pc_assigned_at DEFAULT GETDATE(),
+ 
+    CONSTRAINT pk_profile_content PRIMARY KEY (preg_id, content_id),
+    CONSTRAINT fk_pc_profile FOREIGN KEY (preg_id)
+        REFERENCES pregnancy_profile (preg_id)
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION,
+    CONSTRAINT fk_pc_content FOREIGN KEY (content_id)
+        REFERENCES [content] (content_id)
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION
+);
+GO
