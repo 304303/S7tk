@@ -1,0 +1,14 @@
+-- Drop and recreate the 'S7tk' database
+IF EXISTS (SELECT 1 FROM sys.databases WHERE name = 'S7tk')
+BEGIN
+    ALTER DATABASE S7tk SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE S7tk;
+END;
+GO
+
+-- Create the 'S7tk' database
+CREATE DATABASE S7tk;
+GO
+
+USE S7tk;
+GO
